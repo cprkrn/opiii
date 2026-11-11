@@ -1,6 +1,6 @@
-node_modules
-data
-.env
-digitalocean-*.sh
 *.log
 *.zip
+.env
+data
+digitalocean-*.sh
+node_modules

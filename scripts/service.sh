@@ -15,6 +15,9 @@ chmod 755 "$APP" "$APP/scripts" "$APP/src"
 [ -f "$APP/.env" ] && chown root:root "$APP/.env" && chmod 600 "$APP/.env"
 ln -sf "$APP/scripts/login.sh" /usr/local/bin/imessage-claude-login
 ln -sf "$APP/scripts/update.sh" /usr/local/bin/imessage-claude-update
+ln -sf "$APP/scripts/connect.sh" /usr/local/bin/imessage-claude-connect
+# Install npm dependencies (email/calendar libraries) exactly as locked.
+(cd "$APP" && npm ci --omit=dev --no-audit --no-fund --loglevel=error)
 chmod 755 "$APP"/scripts/*.sh
 cat > /etc/systemd/system/imessage-claude.service <<UNIT
 [Unit]

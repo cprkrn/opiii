@@ -45,8 +45,10 @@ const server = createServer((req, res) => {
       for (const s of sockets) s.write(frame(f));
       res.writeHead(200); return res.end(`delivered to ${sockets.size} socket(s)`);
     }
-    if (req.url === "/files/test.png" && process.env.MOCK_FILE) { // a test attachment
-      res.writeHead(200, { "content-type": "image/png" }); return res.end(readFileSync(process.env.MOCK_FILE));
+    if (req.url.startsWith("/files/") && process.env.MOCK_DIR) { // test attachments / calendars
+      const name = req.url.slice(7).replace(/[^\w.-]/g, "");
+      try { const body = readFileSync(`${process.env.MOCK_DIR}/${name}`); res.writeHead(200); return res.end(body); }
+      catch { res.writeHead(404); return res.end(); }
     }
     if (req.url === "/kick") { for (const s of sockets) s.destroy(); res.writeHead(200); return res.end("kicked"); }
     res.writeHead(404); res.end();

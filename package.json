@@ -9,6 +9,13 @@
     "dev": "PROVIDER=console node src/server.js",
     "test": "node --test test/*.test.js"
   },
-  "engines": { "node": ">=20" },
-  "license": "MIT"
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "imapflow": "2.9.1",
+    "mailparser": "3.12.4",
+    "node-ical": "0.27.3"
+  }
 }

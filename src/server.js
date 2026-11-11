@@ -7,6 +7,9 @@ import { createHandler } from "./handler.js";
 import { Jobs } from "./jobs.js";
 import { cronMatches } from "./cron.js";
 import * as friendsBrain from "./brains/openai-compatible.js";
+import { startBroker } from "./tools/broker.js";
+import { mailEnabled, calendarEnabled } from "./tools/google.js";
+import { setToolBroker, chatDir } from "./brains/claude-cli.js";
 
 // Never let one bad event or promise take the whole bot down.
 process.on("unhandledRejection", (e) => console.error("unhandled rejection:", e?.message ?? e));
@@ -20,6 +23,11 @@ if (problems.length) {
 
 const provider = getProvider(config.provider);
 const store = new Store(config.dataDir);
+if (mailEnabled() || calendarEnabled()) {
+  setToolBroker(await startBroker({ saveDir: chatDir }));
+  console.log(`Personal tools on: ${[mailEnabled() && "Gmail", calendarEnabled() && "Calendar"].filter(Boolean).join(" + ")} (read-only)`);
+}
+
 const jobs = config.claude.jobs ? new Jobs(config.dataDir) : null;
 const handle = createHandler({
   config,

@@ -51,6 +51,12 @@ export const config = {
     dailyLimit: Number(env("FRIENDS_DAILY_LIMIT", "30")),
     open: env("FRIENDS_OPEN", "0") === "1", // 1 = anyone who can reach the number (Claw still requires registration)
   },
+  // Read-only Gmail (IMAP app password) + Google Calendar (secret iCal link).
+  google: {
+    gmailAddress: env("GMAIL_ADDRESS"),
+    gmailAppPassword: env("GMAIL_APP_PASSWORD"),
+    icalUrl: env("GOOGLE_CALENDAR_ICAL_URL"),
+  },
   claw: {
     apiKey: env("CLAW_API_KEY"),
     baseUrl: env("CLAW_BASE_URL", "https://claw-messenger.onrender.com"),

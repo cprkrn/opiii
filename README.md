@@ -98,6 +98,19 @@ You should see `Claw Messenger connected`.
 - Share your location in iMessage and it knows where you are.
 - Chat runs at low effort for fast replies (`CLAUDE_CHAT_EFFORT`), `/code` at high. Coding runs in its own lane, so chat never waits behind it.
 
+## Email & calendar (read-only)
+
+On the server, run `sudo imessage-claude-connect`. It asks for:
+- a **Gmail app password** (myaccount.google.com/apppasswords; needs 2-Step Verification);
+- your calendar's **secret iCal address** (Google Calendar → Settings → your calendar → Integrate calendar).
+
+Then text things like "any important emails today?", "find my Knicks tickets", "what did I order from Amazon this month?", "what's on my calendar Friday?", or ask a job to "every morning at 8 send me my unread emails and today's schedule". Ticket and receipt attachments get saved so it can open them.
+
+- **Read-only.** It can't send, delete or change anything.
+- **Credentials stay in the bot process.** Claude reaches email through a local, token-locked broker.
+- **Not in `/code` or group chats,** which never get access.
+- **Email text is treated as untrusted data,** never as instructions.
+
 ## Friends (optional, model-agnostic)
 
 Friends **never** use your Claude subscription. Their texts go to any OpenAI-compatible API you choose:

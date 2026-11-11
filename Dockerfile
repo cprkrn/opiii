@@ -5,7 +5,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  && rm -rf /var/lib/apt/lists/* \
  && npm install -g @anthropic-ai/claude-code
 WORKDIR /app
-COPY package.json persona.md ./
+COPY package.json package-lock.json persona.md ./
+RUN npm ci --omit=dev --no-audit --no-fund
 COPY src ./src
 COPY scripts ./scripts
 ENV NODE_ENV=production DATA_DIR=/data
