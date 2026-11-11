@@ -12,6 +12,15 @@ import { fileURLToPath } from "node:url";
 import { parseCron, minGapMinutes } from "./cron.js";
 
 export const MIN_GAP = Number(process.env.JOB_MIN_INTERVAL_MINUTES ?? 15);
+export const MAX_JOBS = Number(process.env.MAX_JOBS ?? 15);
+
+// "2026-12-03 09:00" (local time) or any ISO string -> Date
+export function parseWhen(s) {
+  const m = String(s).trim().match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})$/);
+  const d = m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) : new Date(s);
+  if (isNaN(d)) throw new Error(`can't read time "${s}" (use YYYY-MM-DD HH:MM)`);
+  return d;
+}
 
 export class Jobs {
   constructor(dir) {
@@ -19,7 +28,15 @@ export class Jobs {
     this.file = join(dir, "jobs.json");
   }
   all() {
-    return existsSync(this.file) ? JSON.parse(readFileSync(this.file, "utf8")) : [];
+    if (!existsSync(this.file)) return [];
+    try {
+      const list = JSON.parse(readFileSync(this.file, "utf8"));
+      return Array.isArray(list) ? list : [];
+    } catch (e) {
+      renameSync(this.file, `${this.file}.corrupt-${Date.now()}`);
+      console.error("jobs.json was corrupt; saved a copy and started fresh:", e.message);
+      return [];
+    }
   }
   save(list) {
     writeFileSync(this.file + ".tmp", JSON.stringify(list, null, 2));
@@ -30,7 +47,17 @@ export class Jobs {
     const gap = minGapMinutes(cron);
     if (gap < MIN_GAP) throw new Error(`runs every ${gap} min; minimum is ${MIN_GAP} (protects your Claude usage limits)`);
     if (!prompt?.trim()) throw new Error("instructions are required");
+    if (this.all().length >= MAX_JOBS) throw new Error(`already ${MAX_JOBS} jobs; remove one first`);
     const job = { id: randomBytes(3).toString("hex"), cron, name: name || "job", prompt, paused: false, sessionId: null, created: new Date().toISOString(), lastRun: null };
+    this.save([...this.all(), job]);
+    return job;
+  }
+  at(when, name, prompt) {
+    const d = parseWhen(when);
+    if (d.getTime() < Date.now() - 60_000) throw new Error("that time is in the past");
+    if (!prompt?.trim()) throw new Error("instructions are required");
+    if (this.all().length >= MAX_JOBS) throw new Error(`already ${MAX_JOBS} jobs; remove one first`);
+    const job = { id: randomBytes(3).toString("hex"), once: d.toISOString(), name: name || "reminder", prompt, paused: false, sessionId: null, created: new Date().toISOString(), lastRun: null };
     this.save([...this.all(), job]);
     return job;
   }
@@ -57,12 +84,15 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     if (cmd === "add") {
       const j = jobs.add(a[0], a[1], a.slice(2).join(" "));
       console.log(`added job ${j.id} "${j.name}" (${j.cron})`);
+    } else if (cmd === "at") {
+      const j = jobs.at(a[0], a[1], a.slice(2).join(" "));
+      console.log(`added one-time job ${j.id} "${j.name}" at ${new Date(j.once).toLocaleString()}`);
     } else if (cmd === "list") {
       const l = jobs.all();
-      console.log(l.length ? l.map((j) => `${j.id}  ${j.paused ? "[paused] " : ""}${j.cron}  ${j.name}: ${j.prompt}`).join("\n") : "no jobs");
+      console.log(l.length ? l.map((j) => `${j.id}  ${j.paused ? "[paused] " : ""}${j.once ? "once " + new Date(j.once).toLocaleString() : j.cron}  ${j.name}: ${j.prompt}`).join("\n") : "no jobs");
     } else if (cmd === "remove") { jobs.remove(a[0]); console.log(`removed ${a[0]}`); }
     else if (cmd === "pause") { jobs.update(a[0], { paused: true }); console.log(`paused ${a[0]}`); }
     else if (cmd === "resume") { jobs.update(a[0], { paused: false }); console.log(`resumed ${a[0]}`); }
-    else { console.log('usage: jobs.js add "<cron>" "<name>" "<instructions>" | list | remove <id> | pause <id> | resume <id>'); process.exit(1); }
+    else { console.log('usage: jobs.js add "<cron>" "<name>" "<instructions>" | at "<YYYY-MM-DD HH:MM>" "<name>" "<instructions>" | list | remove <id> | pause <id> | resume <id>'); process.exit(1); }
   } catch (e) { console.error("error:", e.message); process.exit(1); }
 }

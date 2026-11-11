@@ -3,8 +3,10 @@ import { resolve } from "node:path";
 
 // Tiny .env loader so there are zero dependencies. Real env vars win.
 const envPath = resolve(".env");
-if (existsSync(envPath)) {
-  for (const line of readFileSync(envPath, "utf8").split("\n")) {
+let envText = "";
+try { if (existsSync(envPath)) envText = readFileSync(envPath, "utf8"); } catch {}
+{
+  for (const line of envText.split("\n")) {
     const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
     if (m && process.env[m[1]] === undefined) {
       process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
@@ -30,12 +32,24 @@ export const config = {
     model: env("CLAUDE_MODEL", "claude-opus-5-5"),
     tools: env("CLAUDE_TOOLS", "WebSearch,WebFetch"),
     jobs: env("ENABLE_JOBS", "1") !== "0",
+    chatEffort: env("CLAUDE_CHAT_EFFORT", "low"),
+    codeEffort: env("CLAUDE_CODE_EFFORT", "high"),
     timeoutMs: Number(env("CLAUDE_TIMEOUT_SECONDS", "180")) * 1000,
     // Coding mode (/code)
     codeTools: env("CLAUDE_CODE_TOOLS", "default"),
     codePermissionMode: env("CLAUDE_CODE_PERMISSION_MODE", "auto"),
     codeMaxTurns: Number(env("CLAUDE_CODE_MAX_TURNS", "80")),
     codeTimeoutMs: Number(env("CLAUDE_CODE_TIMEOUT_MINUTES", "20")) * 60 * 1000,
+  },
+  // Friends: other people who may text the bot. They NEVER use your Claude subscription;
+  // they go to any OpenAI-compatible API you configure (OpenRouter, Groq, Ollama, ...).
+  friends: {
+    numbers: env("FRIENDS").split(",").map(normalizeNumber).filter(Boolean),
+    apiBase: env("FRIENDS_API_BASE"),
+    apiKey: env("FRIENDS_API_KEY"),
+    model: env("FRIENDS_MODEL"),
+    dailyLimit: Number(env("FRIENDS_DAILY_LIMIT", "30")),
+    open: env("FRIENDS_OPEN", "0") === "1", // 1 = anyone who can reach the number (Claw still requires registration)
   },
   claw: {
     apiKey: env("CLAW_API_KEY"),

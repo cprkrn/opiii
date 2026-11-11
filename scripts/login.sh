@@ -22,7 +22,7 @@ if [ "${TOKEN#sk-ant-oat}" = "$TOKEN" ] || [ ${#TOKEN} -lt 90 ]; then
 fi
 sed -i '/^CLAUDE_CODE_OAUTH_TOKEN=/d' "$APP/.env"
 echo "CLAUDE_CODE_OAUTH_TOKEN=$TOKEN" >> "$APP/.env"
-chown claudebot:claudebot "$APP/.env"; chmod 600 "$APP/.env"
+chown root:root "$APP/.env"; chmod 600 "$APP/.env"
 systemctl restart imessage-claude
 sleep 4
 journalctl -u imessage-claude -n 5 --no-pager

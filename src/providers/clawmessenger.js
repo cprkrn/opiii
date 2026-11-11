@@ -17,12 +17,14 @@ export function parseInbound(frame) {
   if (!frame || frame.type !== "message") return [];
   const from = normalizeNumber(frame.from);
   const text = String(frame.text ?? "").trim();
-  const mediaUrls = (frame.attachments ?? []).map((a) => a?.url).filter(Boolean);
+  const mediaUrls = (Array.isArray(frame.attachments) ? frame.attachments : []).map((a) => a?.url).filter((u) => typeof u === "string");
   if (!from || (!text && !mediaUrls.length)) return [];
   const msg = { id: frame.messageId ?? null, from, text, mediaUrls };
+  if (frame.sentAt) msg.sentAt = frame.sentAt;
   if (frame.isGroup) {
     msg.isGroup = true;
     msg.chatId = frame.chatId;
+    if (frame.groupName) msg.groupName = frame.groupName;
     msg.participants = (frame.participants ?? []).map((p) => normalizeNumber(p?.address ?? p?.phone ?? p)).filter(Boolean);
   }
   return [msg];
@@ -31,10 +33,26 @@ export function parseInbound(frame) {
 // Group replies go over the WebSocket: {type:"send", chatId, parts:[{type:"text", value}]}.
 let liveSocket = null;
 const pending = new Map();
-export function sendToChat(chatId, text) {
+const newId = () => "imc-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+// Fire-and-forget frames (typing, read receipts, reactions don't count toward Claw's message cap).
+function wsSend(frame) {
+  try { if (liveSocket?.readyState === 1) { liveSocket.send(JSON.stringify(frame)); return true; } } catch {}
+  return false;
+}
+const target = (t) => (t.chatId ? { chatId: t.chatId } : { to: t.to });
+export const markRead = (t) => wsSend({ type: "read", ...target(t) });
+export const typing = (t, on) => wsSend({ type: on ? "typing.start" : "typing.stop", ...target(t) });
+const STANDARD = { "❤️": "love", "❤": "love", "👍": "like", "👎": "dislike", "😂": "laugh", "‼️": "emphasize", "❓": "question" };
+export function react(messageId, emoji) {
+  if (!messageId || !emoji) return false;
+  const std = STANDARD[emoji];
+  return wsSend({ type: "reaction", id: newId(), messageId, reactionType: std ?? "custom", ...(std ? {} : { emoji }), remove: false });
+}
+
+export function sendToChat(chatId, text, { replyTo } = {}) {
   if (!liveSocket || liveSocket.readyState !== 1) return Promise.reject(new Error("Claw socket not connected"));
-  const id = "imc-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-  liveSocket.send(JSON.stringify({ type: "send", id, chatId, parts: [{ type: "text", value: text }] }));
+  const id = newId();
+  liveSocket.send(JSON.stringify({ type: "send", id, chatId, parts: [{ type: "text", value: text }], ...(replyTo ? { replyTo: { messageId: replyTo } } : {}) }));
   return new Promise((resolve, reject) => {
     const t = setTimeout(() => { pending.delete(id); resolve(); }, 15_000); // no ack: assume sent
     pending.set(id, (r) => {
@@ -46,6 +64,7 @@ export function sendToChat(chatId, text) {
 
 // Used when downloading attachments that need the API key.
 export const authHeader = () => `Bearer ${config.claw.apiKey}`;
+export const apiHost = () => new URL(base()).host;
 
 export async function send(to, text) {
   const res = await fetch(`${base()}/api/agent/send-message`, {
@@ -57,8 +76,10 @@ export async function send(to, text) {
 }
 
 // Keep one WebSocket open forever, reconnecting with backoff. Calls onFrame(obj).
-export function listen(onFrame, log = console) {
-  let backoff = 1000, socket, pinger, stopped = false;
+// lastSeen() -> ISO time of the newest message handled; on reconnect we ask Claw to replay
+// anything newer that arrived while we were disconnected (dedupe drops repeats).
+export function listen(onFrame, log = console, { lastSeen } = {}) {
+  let backoff = 1000, socket, pinger, stopped = false, lastPong = Date.now();
   const connect = () => {
     if (stopped) return;
     const url = new URL(wsUrl());
@@ -67,20 +88,30 @@ export function listen(onFrame, log = console) {
     socket.addEventListener("open", () => {
       backoff = 1000;
       liveSocket = socket;
+      const since = lastSeen?.();
+      if (since) safeSend({ type: "sync", since });
       log.log("Claw Messenger connected");
-      pinger = setInterval(() => safeSend({ type: "ping" }), 30_000);
+      lastPong = Date.now();
+      pinger = setInterval(() => {
+        // Half-open sockets look alive forever; if Claw stops answering pings, reconnect.
+        if (Date.now() - lastPong > 90_000) { log.warn("Claw stopped answering; reconnecting"); try { socket.close(); } catch {} return retry("stale"); }
+        safeSend({ type: "ping" });
+      }, 30_000);
     });
     socket.addEventListener("message", async (ev) => {
       let frame;
       try {
         frame = JSON.parse(typeof ev.data === "string" ? ev.data : await new Response(ev.data).text());
       } catch { return; }
+      if (!frame || typeof frame !== "object") return;
+      lastPong = Date.now(); // any traffic proves the socket is alive
       if (frame.type === "ping") return safeSend({ type: "pong" });
+      if (frame.type === "pong") return;
       if ((frame.type === "send.result" || frame.type === "error") && pending.has(frame.id)) {
         const done = pending.get(frame.id); pending.delete(frame.id); return done(frame);
       }
       if (process.env.LOG_WEBHOOKS === "1") log.log("claw frame:", JSON.stringify(frame));
-      onFrame(frame);
+      try { onFrame(frame); } catch (e) { log.error("frame handler error:", e.message); }
     });
     let retried = false, opened = false;
     const retry = (why) => {

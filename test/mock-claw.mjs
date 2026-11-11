@@ -14,13 +14,18 @@ function frame(str) {
   const head = p.length < 126 ? Buffer.from([0x81, p.length]) : Buffer.from([0x81, 126, p.length >> 8, p.length & 255]);
   return Buffer.concat([head, p]);
 }
-function parse(buf) { // one masked client frame
-  let len = buf[1] & 127, off = 2;
-  if (len === 126) { len = buf.readUInt16BE(2); off = 4; }
-  const mask = buf.subarray(off, off + 4); off += 4;
-  const out = Buffer.alloc(len);
-  for (let i = 0; i < len; i++) out[i] = buf[off + i] ^ mask[i % 4];
-  return { op: buf[0] & 15, text: out.toString() };
+function parseAll(buf) { // all masked client frames in a chunk
+  const frames = [];
+  while (buf.length >= 6) {
+    let len = buf[1] & 127, off = 2;
+    if (len === 126) { len = buf.readUInt16BE(2); off = 4; }
+    const mask = buf.subarray(off, off + 4); off += 4;
+    const out = Buffer.alloc(len);
+    for (let i = 0; i < len; i++) out[i] = buf[off + i] ^ mask[i % 4];
+    frames.push({ op: buf[0] & 15, text: out.toString() });
+    buf = buf.subarray(off + len);
+  }
+  return frames;
 }
 
 const server = createServer((req, res) => {
@@ -36,7 +41,7 @@ const server = createServer((req, res) => {
     }
     if (req.url === "/inject") {
       const m = JSON.parse(body);
-      const f = JSON.stringify({ type: "message", messageId: m.id ?? "in-" + ++n, from: m.from, text: m.text, isGroup: !!m.isGroup, chatId: m.chatId, participants: m.participants, attachments: m.attachments ?? [] });
+      const f = JSON.stringify({ type: "message", messageId: m.id ?? "in-" + ++n, from: m.from, text: m.text, isGroup: !!m.isGroup, chatId: m.chatId, participants: m.participants, sentAt: m.sentAt, attachments: m.attachments ?? [] });
       for (const s of sockets) s.write(frame(f));
       res.writeHead(200); return res.end(`delivered to ${sockets.size} socket(s)`);
     }
@@ -56,7 +61,7 @@ server.on("upgrade", (req, sock) => {
   sock.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`);
   sockets.add(sock);
   console.log("WS client connected");
-  sock.on("data", (b) => { const f = parse(b); if (f.op === 1) console.log("WS recv:", f.text); });
+  sock.on("data", (b) => { for (const f of parseAll(b)) if (f.op === 1) console.log("WS recv:", f.text); });
   sock.on("close", () => sockets.delete(sock));
   sock.on("error", () => {});
 });

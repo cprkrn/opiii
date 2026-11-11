@@ -30,36 +30,17 @@ echo "== Creating bot user and copying app to $APP =="
 id "$BOT" >/dev/null 2>&1 || useradd -m -s /bin/bash "$BOT"
 mkdir -p "$APP"
 if [ "$SRC" != "$APP" ]; then cp -a "$SRC/." "$APP/"; fi
-chown -R "$BOT:$BOT" "$APP"
+mkdir -p "$APP/data" && chown -R "$BOT:$BOT" "$APP/data"
 
 if [ ! -f "$APP/.env" ]; then
   echo "== Setup questions =="
-  sudo -u "$BOT" -H bash "$APP/scripts/setup.sh"
+  chown "$BOT" "$APP"; sudo -u "$BOT" -H bash "$APP/scripts/setup.sh"; chown root "$APP"
 fi
 grep -q '^DATA_DIR=' "$APP/.env" || echo "DATA_DIR=$APP/data" >> "$APP/.env"
 
 echo "== Installing background service =="
-cat > /etc/systemd/system/imessage-claude.service <<UNIT
-[Unit]
-Description=iMessage Claude bot
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-User=$BOT
-WorkingDirectory=$APP
-ExecStart=/bin/sh $APP/scripts/entrypoint.sh
-Environment=DATA_DIR=$APP/data
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-UNIT
-ln -sf "$APP/scripts/login.sh" /usr/local/bin/imessage-claude-login
-ln -sf "$APP/scripts/update.sh" /usr/local/bin/imessage-claude-update
-systemctl daemon-reload
-systemctl enable --now imessage-claude >/dev/null
+bash "$APP/scripts/service.sh"
+systemctl restart imessage-claude
 sleep 4
 systemctl --no-pager --lines=8 status imessage-claude || true
 echo

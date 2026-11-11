@@ -4,6 +4,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 process.env.DATA_DIR = mkdtempSync(join(tmpdir(), "imc-"));
+process.env.DEBOUNCE_MS = "0";
 const { createHandler, chunk } = await import("../src/handler.js");
 const { Store } = await import("../src/store.js");
 const sendblue = await import("../src/providers/sendblue.js");
@@ -141,11 +142,75 @@ test("groups: only the owner's 'claude ...' messages get replies; friends are co
   g("4", OWNER, "Claude, what time is dinner?");             // owner + trigger: reply
   await tick();
   assert.equal(calls.length, 1);
-  assert.match(calls[0].text, /\+15550001111: dinner tmrw at lucali, 7pm\?/);
+  assert.match(calls[0].text, /\+15550001111: "dinner tmrw at lucali, 7pm\?"/); // quoted, so friends can't forge lines
   assert.match(calls[0].text, /Owner asks: what time is dinner\?/);
   assert.deepEqual(sentChat, [{ chatId: "chat1", text: "7pm at Lucali" }]);
   // groups without the owner are ignored entirely
   handle({ id: "5", from: "+15550002222", text: "claude hi", mediaUrls: [], isGroup: true, chatId: "chat2", participants: ["+15550002222"] });
   await tick();
   assert.equal(calls.length, 1);
+});
+
+test("rapid-fire texts are merged into one turn", async () => {
+  const sent = [], calls = [];
+  const ch = createHandler;
+  process.env.DEBOUNCE_MS = "40";
+  const provider = { parseInbound: sendblue.parseInbound, send: async (to, text) => sent.push(text) };
+  const brain = { reply: async (a) => { calls.push(a); return { text: "ok", sessionId: "s" }; } };
+  const handle = ch({ config: { owners: [OWNER] }, store: new Store(mkdtempSync(join(tmpdir(), "imc-"))), provider, brain, log: { warn() {}, error() {} } });
+  process.env.DEBOUNCE_MS = "0";
+  handle({ from_number: OWNER, content: "hey", message_handle: "d1" });
+  handle({ from_number: OWNER, content: "quick q", message_handle: "d2" });
+  handle({ from_number: OWNER, content: "whats the weather", message_handle: "d3" });
+  await new Promise((r) => setTimeout(r, 120));
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].text, /hey\nquick q\nwhats the weather$/);
+});
+
+test("/stop cancels the running task right away", async () => {
+  const { CancelledError } = await import("../src/brains/claude-cli.js");
+  const sent = [];
+  const provider = { parseInbound: sendblue.parseInbound, send: async (to, text) => sent.push(text) };
+  const brain = { reply: (a) => new Promise((_, rej) => a.signal.addEventListener("abort", () => rej(new CancelledError("stopped")))) };
+  const handle = createHandler({ config: { owners: [OWNER] }, store: new Store(mkdtempSync(join(tmpdir(), "imc-"))), provider, brain, log: { warn() {}, error() {} } });
+  handle({ from_number: OWNER, content: "/code build a huge app", message_handle: "s1" });
+  await tick();
+  handle({ from_number: OWNER, content: "/stop", message_handle: "s2" });
+  await tick();
+  assert.ok(sent.includes("Stopped 👍"), JSON.stringify(sent));
+});
+
+test("friends never reach the Claude brain; they get the friends brain with a daily cap", async () => {
+  const FRIEND = "+15550001111";
+  const sent = [], claudeCalls = [], friendCalls = [];
+  const provider = { parseInbound: (b) => [b], send: async (to, text) => sent.push({ to, text }), sendToChat: async (chatId, text) => sent.push({ chatId, text }) };
+  const brain = { reply: async (a) => { claudeCalls.push(a); return { text: "claude", sessionId: "c" }; } };
+  const friendsBrain = { enabled: () => true, reply: async (a) => { friendCalls.push(a); return "friend reply"; } };
+  const store = new Store(mkdtempSync(join(tmpdir(), "imc-")));
+  const handle = createHandler({ config: { owners: [OWNER], groups: true, groupTrigger: "claude", friends: { numbers: [FRIEND], dailyLimit: 2 } }, store, provider, brain, friendsBrain, log: { warn() {}, error() {} } });
+  for (const id of ["f1", "f2", "f3"]) handle({ id, from: FRIEND, text: "hi", mediaUrls: [] });
+  handle({ id: "x1", from: "+19999999999", text: "stranger", mediaUrls: [] });
+  handle({ id: "g1", from: FRIEND, text: "claude what's 2+2", mediaUrls: [], isGroup: true, chatId: "c1", participants: [OWNER, FRIEND] });
+  await tick(); await tick();
+  assert.equal(claudeCalls.length, 0);
+  assert.equal(friendCalls.length, 2); // 2 allowed today, 3rd 1:1 and the group ask are over the cap
+  assert.ok(sent.some((s) => /limit for today/.test(s.text)));
+  assert.ok(!sent.some((s) => s.to === "+19999999999"));
+});
+
+test("one-time reminders parse local times and reject the past", async () => {
+  const { Jobs, parseWhen } = await import("../src/jobs.js");
+  const jobs = new Jobs(mkdtempSync(join(tmpdir(), "imc-")));
+  const d = parseWhen("2030-01-02 09:05");
+  assert.equal(d.getHours(), 9); assert.equal(d.getMinutes(), 5);
+  const j = jobs.at("2030-01-02 09:05", "dentist", "remind me about the dentist");
+  assert.ok(j.once && !j.cron);
+  assert.throws(() => jobs.at("2001-01-01 09:00", "x", "y"), /past/);
+});
+
+test("cron: 7 is Sunday only in the day-of-week field", async () => {
+  const { cronMatches } = await import("../src/cron.js");
+  assert.ok(cronMatches("0 7 * * *", new Date(2026, 10, 15, 7, 0)));
+  assert.ok(!cronMatches("0 7 * * *", new Date(2026, 10, 15, 0, 0)));
+  assert.ok(cronMatches("0 9 * * 7", new Date(2026, 10, 15, 9, 0)));
 });

@@ -76,7 +76,10 @@ You should see `Claw Messenger connected`.
 | `continue` | Keep going if it hit its step limit |
 | `/chat` | Back to chat mode (each mode keeps its own memory) |
 | `/new` | Start a fresh conversation in the current mode |
-| `/status`, `/help` | Show the current mode or the command list |
+| `/stop` | Cancel whatever it's working on (answers instantly, even mid-task) |
+| `/jobs` | List scheduled jobs |
+| "remind me tomorrow at 9 to call the dentist" | One-time reminder |
+| `/status`, `/help` | Show the current mode (and what it's doing) or the command list |
 | "text me if BTC drops 5%, check hourly" | Creates a **scheduled job** that runs on its own and texts you (alerts, reminders, daily briefings). "what jobs do I have?" and "cancel the BTC job" manage them. Minimum interval is 15 min. |
 
 **Coding notes**
@@ -86,9 +89,32 @@ You should see `Claw Messenger connected`.
 
 **Customize** the personality in `persona.md`. Text `/new` afterwards so it takes effect.
 
+## Feels like texting a person
+
+- Read receipts, and a typing bubble while it works, both free on Claw.
+- Answers "thanks" or "ok" with a tapback instead of a text, which saves messages.
+- Several quick texts in a row get one reply.
+- **Long-term memory** (`data/workspace/memory.md`): durable facts about you, which survive `/new`. Never used in group chats.
+- Share your location in iMessage and it knows where you are.
+- Chat runs at low effort for fast replies (`CLAUDE_CHAT_EFFORT`), `/code` at high. Coding runs in its own lane, so chat never waits behind it.
+
+## Friends (optional, model-agnostic)
+
+Friends **never** use your Claude subscription. Their texts go to any OpenAI-compatible API you choose:
+
+```
+FRIENDS=+15551112222,+15553334444      # or FRIENDS_OPEN=1 for anyone registered in Claw
+FRIENDS_API_BASE=https://openrouter.ai/api/v1   # Groq, Together, Ollama (http://localhost:11434/v1)...
+FRIENDS_API_KEY=sk-or-...
+FRIENDS_MODEL=google/gemini-2.5-flash
+FRIENDS_DAILY_LIMIT=30
+```
+
+Friends can text the bot 1:1 or say `claude ...` in a group. They get chat only: no tools, no access to your memory, jobs or code. Each friend's number must be registered in Claw (Growth plan: 5 numbers).
+
 ## Group chats
 
-Add the bot's number to a group (needs Claw **Growth** or higher, since groups need 2+ registered numbers). It reads the conversation for context but **only replies when you** start a message with `claude`, e.g. `claude what time is dinner?`. Friends can't trigger it, so they never spend your Claude plan. Each group has its own memory. `claude /new` resets it. Settings: `GROUPS=0` turns groups off; `GROUP_TRIGGER=jarvis` changes the wake word.
+Add the bot's number to a group (needs Claw **Growth** or higher, since groups need 2+ registered numbers). It reads the conversation for context but **only replies when you** start a message with `claude`, e.g. `claude what time is dinner?`. Friends can't trigger Claude (with friends mode on, their `claude ...` goes to the friends model instead). Chat history from friends is quoted as data, so they can't inject instructions. Each group has its own memory. `claude /new` resets it. Settings: `GROUPS=0` turns groups off; `GROUP_TRIGGER=jarvis` changes the wake word.
 
 ## Updating
 

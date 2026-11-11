@@ -1,7 +1,7 @@
 // Tiny 5-field cron matcher: "min hour day-of-month month day-of-week".
 // Supports *, numbers, a-b ranges, lists (1,5,9) and steps (*/15, 0-30/5).
 // Times are in the server's TZ (set TZ in .env).
-const RANGES = [[0, 59], [0, 23], [1, 31], [1, 12], [0, 6]];
+const RANGES = [[0, 59], [0, 23], [1, 31], [1, 12], [0, 7]]; // day-of-week 7 = Sunday
 
 function parseField(field, [lo, hi]) {
   const set = new Set();
@@ -14,7 +14,7 @@ function parseField(field, [lo, hi]) {
     else { a = Number(range); b = stepStr ? hi : a; }
     if (![a, b, step].every(Number.isInteger) || step < 1 || a < lo || b > hi || a > b)
       throw new Error(`bad cron field "${field}"`);
-    for (let v = a; v <= b; v += step) set.add(v === 7 && hi === 6 ? 0 : v);
+    for (let v = a; v <= b; v += step) set.add(hi === 7 && v === 7 ? 0 : v);
   }
   return set;
 }
@@ -22,7 +22,7 @@ function parseField(field, [lo, hi]) {
 export function parseCron(expr) {
   const f = String(expr).trim().split(/\s+/);
   if (f.length !== 5) throw new Error(`cron needs 5 fields, got "${expr}"`);
-  const sets = f.map((x, i) => parseField(x.replace(/^7$/, "0"), RANGES[i]));
+  const sets = f.map((x, i) => parseField(x, RANGES[i]));
   return { sets, domStar: f[2] === "*", dowStar: f[4] === "*" };
 }
 
