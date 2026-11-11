@@ -86,6 +86,10 @@ You should see `Claw Messenger connected`.
 
 **Customize** the personality in `persona.md`. Text `/new` afterwards so it takes effect.
 
+## Updating
+
+On the server, run `sudo imessage-claude-update`. It pulls the latest code from your GitHub repo and restarts the bot. The first time, it asks for a read-only GitHub token. Your `.env` and `data/` are kept.
+
 ## Troubleshooting
 
 - **No reply:** run with `LOG_WEBHOOKS=1` to print every incoming event. If nothing shows up, your phone or email isn't registered in the Claw dashboard.

@@ -57,6 +57,7 @@ RestartSec=5
 WantedBy=multi-user.target
 UNIT
 ln -sf "$APP/scripts/login.sh" /usr/local/bin/imessage-claude-login
+ln -sf "$APP/scripts/update.sh" /usr/local/bin/imessage-claude-update
 systemctl daemon-reload
 systemctl enable --now imessage-claude >/dev/null
 sleep 4
