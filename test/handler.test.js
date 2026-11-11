@@ -81,11 +81,12 @@ test("/code switches mode with its own session; /chat switches back", async () =
   assert.ok(sent.some((s) => s.text.includes("On it")));
 });
 
-test("claw messenger frames parse; groups, pings and junk are ignored", async () => {
+test("claw messenger frames parse (incl. groups); pings and junk are ignored", async () => {
   const claw = await import("../src/providers/clawmessenger.js");
   assert.deepEqual(claw.parseInbound({ type: "message", messageId: "m", from: "5551234567", text: " yo ", attachments: [{ url: "https://x/img.jpg" }] }),
     [{ id: "m", from: OWNER, text: "yo", mediaUrls: ["https://x/img.jpg"] }]);
-  assert.deepEqual(claw.parseInbound({ type: "message", from: OWNER, text: "g", isGroup: true }), []);
+  assert.deepEqual(claw.parseInbound({ type: "message", messageId: "g1", from: OWNER, text: "g", isGroup: true, chatId: "c1", participants: ["+15550001111"] }),
+    [{ id: "g1", from: OWNER, text: "g", mediaUrls: [], isGroup: true, chatId: "c1", participants: ["+15550001111"] }]);
   assert.deepEqual(claw.parseInbound({ type: "pong" }), []);
   assert.deepEqual(claw.parseInbound(null), []);
 });
@@ -123,4 +124,28 @@ test("job runs text the owner unless SILENT", async () => {
   await handle.runJob(j1, jobs); await handle.runJob(j2, jobs);
   assert.deepEqual(sent.map((s) => s.text), ["BTC dropped 6%!"]);
   assert.equal(jobs.all()[0].sessionId, "js");
+});
+
+test("groups: only the owner's 'claude ...' messages get replies; friends are context only", async () => {
+  const sentChat = [];
+  const calls = [];
+  const provider = { parseInbound: (b) => [b], send: async () => {}, sendToChat: async (chatId, text) => sentChat.push({ chatId, text }) };
+  const brain = { reply: async (a) => { calls.push(a); return { text: "7pm at Lucali", sessionId: "g-s" }; } };
+  const store = new Store(mkdtempSync(join(tmpdir(), "imc-")));
+  const log = { warn() {}, error() {}, log() {} };
+  const handle = createHandler({ config: { owners: [OWNER], groups: true, groupTrigger: "claude" }, store, provider, brain, log });
+  const g = (id, from, text) => handle({ id, from, text, mediaUrls: [], isGroup: true, chatId: "chat1", participants: [OWNER, "+15550001111"] });
+  g("1", "+15550001111", "dinner tmrw at lucali, 7pm?");
+  g("2", "+15550001111", "claude what time is dinner");     // friend using trigger: ignored
+  g("3", OWNER, "sounds good");                             // owner, no trigger: context only
+  g("4", OWNER, "Claude, what time is dinner?");             // owner + trigger: reply
+  await tick();
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].text, /\+15550001111: dinner tmrw at lucali, 7pm\?/);
+  assert.match(calls[0].text, /Owner asks: what time is dinner\?/);
+  assert.deepEqual(sentChat, [{ chatId: "chat1", text: "7pm at Lucali" }]);
+  // groups without the owner are ignored entirely
+  handle({ id: "5", from: "+15550002222", text: "claude hi", mediaUrls: [], isGroup: true, chatId: "chat2", participants: ["+15550002222"] });
+  await tick();
+  assert.equal(calls.length, 1);
 });

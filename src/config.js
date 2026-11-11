@@ -20,6 +20,9 @@ export const config = {
   owners: env("OWNER_NUMBER").split(",").map(normalizeNumber).filter(Boolean),
   webhookSecret: env("WEBHOOK_SECRET"),
   provider: env("PROVIDER", "clawmessenger"),
+  // Group chats: only an owner's message starting with the trigger word gets a reply.
+  groups: env("GROUPS", "1") !== "0",
+  groupTrigger: env("GROUP_TRIGGER", "claude"),
   brain: env("BRAIN", "claude-cli"),
   dataDir: resolve(env("DATA_DIR", "./data")),
   personaFile: resolve(env("PERSONA_FILE", "./persona.md")),

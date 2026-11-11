@@ -14,12 +14,34 @@ const base = () => config.claw.baseUrl.replace(/\/$/, "");
 const wsUrl = () => base().replace(/^http/, "ws") + "/ws";
 
 export function parseInbound(frame) {
-  if (!frame || frame.type !== "message" || frame.isGroup) return [];
+  if (!frame || frame.type !== "message") return [];
   const from = normalizeNumber(frame.from);
   const text = String(frame.text ?? "").trim();
   const mediaUrls = (frame.attachments ?? []).map((a) => a?.url).filter(Boolean);
   if (!from || (!text && !mediaUrls.length)) return [];
-  return [{ id: frame.messageId ?? null, from, text, mediaUrls }];
+  const msg = { id: frame.messageId ?? null, from, text, mediaUrls };
+  if (frame.isGroup) {
+    msg.isGroup = true;
+    msg.chatId = frame.chatId;
+    msg.participants = (frame.participants ?? []).map((p) => normalizeNumber(p?.address ?? p?.phone ?? p)).filter(Boolean);
+  }
+  return [msg];
+}
+
+// Group replies go over the WebSocket: {type:"send", chatId, parts:[{type:"text", value}]}.
+let liveSocket = null;
+const pending = new Map();
+export function sendToChat(chatId, text) {
+  if (!liveSocket || liveSocket.readyState !== 1) return Promise.reject(new Error("Claw socket not connected"));
+  const id = "imc-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  liveSocket.send(JSON.stringify({ type: "send", id, chatId, parts: [{ type: "text", value: text }] }));
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => { pending.delete(id); resolve(); }, 15_000); // no ack: assume sent
+    pending.set(id, (r) => {
+      clearTimeout(t);
+      r.ok === false || r.status === "failed" ? reject(new Error(`Claw group send failed: ${r.error ?? JSON.stringify(r)}`)) : resolve();
+    });
+  });
 }
 
 // Used when downloading attachments that need the API key.
@@ -44,6 +66,7 @@ export function listen(onFrame, log = console) {
     socket = new WebSocket(url);
     socket.addEventListener("open", () => {
       backoff = 1000;
+      liveSocket = socket;
       log.log("Claw Messenger connected");
       pinger = setInterval(() => safeSend({ type: "ping" }), 30_000);
     });
@@ -53,6 +76,9 @@ export function listen(onFrame, log = console) {
         frame = JSON.parse(typeof ev.data === "string" ? ev.data : await new Response(ev.data).text());
       } catch { return; }
       if (frame.type === "ping") return safeSend({ type: "pong" });
+      if ((frame.type === "send.result" || frame.type === "error") && pending.has(frame.id)) {
+        const done = pending.get(frame.id); pending.delete(frame.id); return done(frame);
+      }
       if (process.env.LOG_WEBHOOKS === "1") log.log("claw frame:", JSON.stringify(frame));
       onFrame(frame);
     });

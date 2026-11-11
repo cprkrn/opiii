@@ -9,12 +9,26 @@ export class Store {
     this.data = existsSync(this.file)
       ? JSON.parse(readFileSync(this.file, "utf8"))
       : { users: {}, seen: [] };
+    this.data.groups ??= {};
   }
   user(number) {
     return (this.data.users[number] ??= { sessionId: null, messages: 0 });
   }
   update(number, patch) {
     Object.assign(this.user(number), patch);
+    this.save();
+  }
+  group(chatId) {
+    return (this.data.groups[chatId] ??= { sessionId: null, recent: [] });
+  }
+  updateGroup(chatId, patch) {
+    Object.assign(this.group(chatId), patch);
+    this.save();
+  }
+  addGroupMessage(chatId, m) {
+    const g = this.group(chatId);
+    g.recent.push({ ...m, at: new Date().toISOString() });
+    if (g.recent.length > 40) g.recent = g.recent.slice(-40);
     this.save();
   }
   // De-dupe webhook retries by message id.

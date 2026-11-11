@@ -36,7 +36,7 @@ const server = createServer((req, res) => {
     }
     if (req.url === "/inject") {
       const m = JSON.parse(body);
-      const f = JSON.stringify({ type: "message", messageId: m.id ?? "in-" + ++n, from: m.from, text: m.text, isGroup: !!m.isGroup, attachments: m.attachments ?? [] });
+      const f = JSON.stringify({ type: "message", messageId: m.id ?? "in-" + ++n, from: m.from, text: m.text, isGroup: !!m.isGroup, chatId: m.chatId, participants: m.participants, attachments: m.attachments ?? [] });
       for (const s of sockets) s.write(frame(f));
       res.writeHead(200); return res.end(`delivered to ${sockets.size} socket(s)`);
     }

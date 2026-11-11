@@ -86,6 +86,10 @@ You should see `Claw Messenger connected`.
 
 **Customize** the personality in `persona.md`. Text `/new` afterwards so it takes effect.
 
+## Group chats
+
+Add the bot's number to a group (needs Claw **Growth** or higher, since groups need 2+ registered numbers). It reads the conversation for context but **only replies when you** start a message with `claude`, e.g. `claude what time is dinner?`. Friends can't trigger it, so they never spend your Claude plan. Each group has its own memory. `claude /new` resets it. Settings: `GROUPS=0` turns groups off; `GROUP_TRIGGER=jarvis` changes the wake word.
+
 ## Updating
 
 On the server, run `sudo imessage-claude-update`. It pulls the latest code from your GitHub repo and restarts the bot. The first time, it asks for a read-only GitHub token. Your `.env` and `data/` are kept.
