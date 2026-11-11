@@ -1,0 +1,14 @@
+{
+  "name": "imessage-claude",
+  "version": "0.1.0",
+  "description": "Text your own Claude over iMessage. Personal use, powered by Claude Code on your own subscription.",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "PROVIDER=console node src/server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": { "node": ">=20" },
+  "license": "MIT"
+}

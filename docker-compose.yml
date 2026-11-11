@@ -1,0 +1,12 @@
+# Run anywhere with Docker: a $6 DigitalOcean droplet, a home server, your laptop.
+#   docker compose up -d --build
+# No ports need to be opened: Claw Messenger delivers texts over an outbound WebSocket.
+services:
+  imessage-claude:
+    build: .
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+    volumes:
+      - ./data:/data   # chat memory, Claude Code sessions, your coding projects
+    restart: unless-stopped
